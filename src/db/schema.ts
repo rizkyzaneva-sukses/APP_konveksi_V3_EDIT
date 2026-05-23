@@ -95,17 +95,18 @@ export const sjStatusEnum = pgEnum('sj_status', ['draft', 'final']);
 
 // =============================================================================
 // TABEL: user_profile
-// id diisi dari auth.users (Supabase Auth) — tidak ada defaultRandom().
-// FK ke auth.users tidak bisa diekspresikan via Drizzle (beda schema).
+// Auth mandiri — email + password_hash disimpan langsung di tabel ini.
 // =============================================================================
 
 export const userProfile = pgTable('user_profile', {
-  id:        uuid('id').primaryKey(), // FK ke auth.users(id) — diatur via SQL migration
-  nama:      text('nama').notNull(),
-  role:      userRoleEnum('role').notNull().default('mandor'),
-  aktif:     boolean('aktif').notNull().default(true),
-  tenantId:  text('tenant_id').notNull().default('STX-001'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  id:           uuid('id').primaryKey().defaultRandom(),
+  email:        text('email').notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+  nama:         text('nama').notNull(),
+  role:         userRoleEnum('role').notNull().default('mandor'),
+  aktif:        boolean('aktif').notNull().default(true),
+  tenantId:     text('tenant_id').notNull().default('STX-001'),
+  createdAt:    timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 

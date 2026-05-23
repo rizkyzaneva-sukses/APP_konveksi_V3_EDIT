@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { createClient } from '@/lib/supabase/client';
+import { loginAction } from '@/lib/auth/actions';
 import { motion } from 'framer-motion';
 
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from '@/components/ui/card';
@@ -42,15 +42,14 @@ export default function LoginPage() {
 
   const onSubmit = async (values: LoginFormValues) => {
     setServerError(null);
-    const supabase = createClient();
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const result = await loginAction({
       email: values.email,
       password: values.password,
     });
 
-    if (error) {
-      setServerError('Email atau password salah. Silakan coba lagi.');
+    if (result.error) {
+      setServerError(result.error);
       return;
     }
 

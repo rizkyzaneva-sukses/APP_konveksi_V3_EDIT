@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { getSession } from '@/lib/auth/session';
 
 // ---------------------------------------------------------------------------
 // Tipe
@@ -17,34 +17,25 @@ export interface UserProfile {
   role: UserRole;
   aktif: boolean;
   tenant_id: string;
-  created_at: string;
 }
 
 // ---------------------------------------------------------------------------
 // getCurrentUserProfile
-// Ambil user dari session aktif, lalu query tabel user_profile.
-// Return null jika tidak ada session atau profile tidak ditemukan.
+// Ambil user dari session JWT cookie.
+// Return null jika tidak ada session.
 // ---------------------------------------------------------------------------
 
 export async function getCurrentUserProfile(): Promise<UserProfile | null> {
-  const supabase = await createClient();
+  const session = await getSession();
+  if (!session) return null;
 
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
-  if (userError || !user) return null;
-
-  const { data: profile, error: profileError } = await supabase
-    .from('user_profile')
-    .select('id, nama, role, aktif, tenant_id, created_at')
-    .eq('id', user.id)
-    .single();
-
-  if (profileError || !profile) return null;
-
-  return profile as UserProfile;
+  return {
+    id: session.userId,
+    nama: session.nama,
+    role: session.role as UserRole,
+    aktif: true,
+    tenant_id: session.tenantId,
+  };
 }
 
 // ---------------------------------------------------------------------------

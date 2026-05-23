@@ -1,8 +1,11 @@
-import { createBrowserClient } from '@supabase/ssr';
+// =============================================================================
+// src/lib/supabase/client.ts
+// DEPRECATED — Browser client tidak lagi dibutuhkan.
+// Auth sekarang dilakukan via Server Actions.
+// File ini dipertahankan untuk backward compatibility jika ada import.
+// =============================================================================
 
 export function createClient() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  );
+  console.warn('[DEPRECATED] createClient dari supabase/client tidak lagi digunakan. Gunakan Server Actions.');
+  return null;
 }

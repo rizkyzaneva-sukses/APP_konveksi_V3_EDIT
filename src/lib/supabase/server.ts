@@ -1,28 +1,253 @@
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+// =============================================================================
+// src/lib/supabase/server.ts
+// Compatibility layer — menggantikan Supabase client dengan query langsung ke PostgreSQL.
+// API dibuat mirip Supabase agar tidak perlu rewrite semua action files.
+// =============================================================================
 
-export async function createClient() {
-  const cookieStore = await cookies();
+import postgres from 'postgres';
 
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options),
-            );
-          } catch {
-            // setAll dipanggil dari Server Component — cookies read-only.
-            // Diabaikan karena middleware sudah handle refresh session.
-          }
-        },
+const sql = postgres(process.env.DATABASE_URL!, {
+  max: 10,
+  idle_timeout: 20,
+});
+
+type FilterOp = { column: string; value: unknown };
+type OrderOp = { column: string; ascending: boolean };
+
+interface QueryBuilder<T = Record<string, unknown>> {
+  select(columns?: string): QueryBuilder<T>;
+  insert(data: Record<string, unknown> | Record<string, unknown>[]): QueryBuilder<T>;
+  update(data: Record<string, unknown>): QueryBuilder<T>;
+  delete(): QueryBuilder<T>;
+  eq(column: string, value: unknown): QueryBuilder<T>;
+  neq(column: string, value: unknown): QueryBuilder<T>;
+  gt(column: string, value: unknown): QueryBuilder<T>;
+  gte(column: string, value: unknown): QueryBuilder<T>;
+  lt(column: string, value: unknown): QueryBuilder<T>;
+  lte(column: string, value: unknown): QueryBuilder<T>;
+  in(column: string, values: unknown[]): QueryBuilder<T>;
+  is(column: string, value: unknown): QueryBuilder<T>;
+  like(column: string, pattern: string): QueryBuilder<T>;
+  ilike(column: string, pattern: string): QueryBuilder<T>;
+  contains(column: string, value: unknown): QueryBuilder<T>;
+  order(column: string, options?: { ascending?: boolean }): QueryBuilder<T>;
+  limit(count: number): QueryBuilder<T>;
+  range(from: number, to: number): QueryBuilder<T>;
+  single(): Promise<{ data: T | null; error: Error | null }>;
+  maybeSingle(): Promise<{ data: T | null; error: Error | null }>;
+  then(resolve: (result: { data: T[] | null; error: Error | null; count?: number }) => void): void;
+}
+
+function buildQuery(table: string) {
+  let operation: 'select' | 'insert' | 'update' | 'delete' = 'select';
+  let selectColumns = '*';
+  let insertData: Record<string, unknown> | Record<string, unknown>[] | null = null;
+  let updateData: Record<string, unknown> | null = null;
+  let filters: string[] = [];
+  let filterValues: unknown[] = [];
+  let orders: OrderOp[] = [];
+  let limitCount: number | null = null;
+  let rangeFrom: number | null = null;
+  let rangeTo: number | null = null;
+  let returnSelect = false;
+  let paramIndex = 1;
+
+  function addParam(value: unknown): string {
+    filterValues.push(value);
+    return `$${paramIndex++}`;
+  }
+
+  const builder: any = {
+    select(columns?: string) {
+      if (operation === 'insert' || operation === 'update') {
+        // .select() after .insert()/.update() means RETURNING
+        returnSelect = true;
+        if (columns) selectColumns = columns;
+        return builder;
+      }
+      operation = 'select';
+      if (columns) selectColumns = columns;
+      return builder;
+    },
+    insert(data: Record<string, unknown> | Record<string, unknown>[]) {
+      operation = 'insert';
+      insertData = data;
+      return builder;
+    },
+    update(data: Record<string, unknown>) {
+      operation = 'update';
+      updateData = data;
+      return builder;
+    },
+    delete() {
+      operation = 'delete';
+      return builder;
+    },
+    eq(column: string, value: unknown) {
+      filters.push(`"${column}" = ${addParam(value)}`);
+      return builder;
+    },
+    neq(column: string, value: unknown) {
+      filters.push(`"${column}" != ${addParam(value)}`);
+      return builder;
+    },
+    gt(column: string, value: unknown) {
+      filters.push(`"${column}" > ${addParam(value)}`);
+      return builder;
+    },
+    gte(column: string, value: unknown) {
+      filters.push(`"${column}" >= ${addParam(value)}`);
+      return builder;
+    },
+    lt(column: string, value: unknown) {
+      filters.push(`"${column}" < ${addParam(value)}`);
+      return builder;
+    },
+    lte(column: string, value: unknown) {
+      filters.push(`"${column}" <= ${addParam(value)}`);
+      return builder;
+    },
+    in(column: string, values: unknown[]) {
+      if (values.length === 0) {
+        filters.push('FALSE');
+      } else {
+        const placeholders = values.map(v => addParam(v)).join(', ');
+        filters.push(`"${column}" IN (${placeholders})`);
+      }
+      return builder;
+    },
+    is(column: string, value: unknown) {
+      if (value === null) {
+        filters.push(`"${column}" IS NULL`);
+      } else {
+        filters.push(`"${column}" IS ${value}`);
+      }
+      return builder;
+    },
+    like(column: string, pattern: string) {
+      filters.push(`"${column}" LIKE ${addParam(pattern)}`);
+      return builder;
+    },
+    ilike(column: string, pattern: string) {
+      filters.push(`"${column}" ILIKE ${addParam(pattern)}`);
+      return builder;
+    },
+    contains(column: string, value: unknown) {
+      filters.push(`"${column}" @> ${addParam(JSON.stringify(value))}::jsonb`);
+      return builder;
+    },
+    order(column: string, options?: { ascending?: boolean }) {
+      orders.push({ column, ascending: options?.ascending ?? true });
+      return builder;
+    },
+    limit(count: number) {
+      limitCount = count;
+      return builder;
+    },
+    range(from: number, to: number) {
+      rangeFrom = from;
+      rangeTo = to;
+      return builder;
+    },
+    async single(): Promise<{ data: any; error: Error | null }> {
+      try {
+        const result = await execute();
+        if (result.length === 0) {
+          return { data: null, error: new Error('No rows found') };
+        }
+        return { data: result[0], error: null };
+      } catch (e: any) {
+        return { data: null, error: e };
+      }
+    },
+    async maybeSingle(): Promise<{ data: any; error: Error | null }> {
+      try {
+        const result = await execute();
+        return { data: result[0] || null, error: null };
+      } catch (e: any) {
+        return { data: null, error: e };
+      }
+    },
+    then(resolve: any, reject?: any) {
+      execute()
+        .then(result => resolve({ data: result, error: null, count: result.length }))
+        .catch(e => {
+          if (reject) reject(e);
+          else resolve({ data: null, error: e });
+        });
+    },
+  };
+
+  async function execute(): Promise<any[]> {
+    let query = '';
+
+    if (operation === 'select') {
+      query = `SELECT ${selectColumns === '*' ? '*' : selectColumns.split(',').map(c => `"${c.trim()}"`).join(', ')} FROM "${table}"`;
+    } else if (operation === 'insert' && insertData) {
+      const rows = Array.isArray(insertData) ? insertData : [insertData];
+      const columns = Object.keys(rows[0]);
+      const colStr = columns.map(c => `"${c}"`).join(', ');
+      const valStr = rows.map(row => {
+        return '(' + columns.map(c => addParam(row[c])).join(', ') + ')';
+      }).join(', ');
+      query = `INSERT INTO "${table}" (${colStr}) VALUES ${valStr}`;
+      if (returnSelect) {
+        query += ` RETURNING ${selectColumns === '*' ? '*' : selectColumns.split(',').map(c => `"${c.trim()}"`).join(', ')}`;
+      }
+    } else if (operation === 'update' && updateData) {
+      const setClauses = Object.entries(updateData).map(([k, v]) => `"${k}" = ${addParam(v)}`);
+      query = `UPDATE "${table}" SET ${setClauses.join(', ')}`;
+      if (returnSelect) {
+        query += ` RETURNING ${selectColumns === '*' ? '*' : selectColumns.split(',').map(c => `"${c.trim()}"`).join(', ')}`;
+      }
+    } else if (operation === 'delete') {
+      query = `DELETE FROM "${table}"`;
+      if (returnSelect) {
+        query += ` RETURNING ${selectColumns === '*' ? '*' : selectColumns.split(',').map(c => `"${c.trim()}"`).join(', ')}`;
+      }
+    }
+
+    if (filters.length > 0 && operation !== 'insert') {
+      query += ` WHERE ${filters.join(' AND ')}`;
+    }
+
+    if (orders.length > 0) {
+      query += ` ORDER BY ${orders.map(o => `"${o.column}" ${o.ascending ? 'ASC' : 'DESC'}`).join(', ')}`;
+    }
+
+    if (limitCount !== null) {
+      query += ` LIMIT ${limitCount}`;
+    }
+
+    if (rangeFrom !== null && rangeTo !== null) {
+      query += ` LIMIT ${rangeTo - rangeFrom + 1} OFFSET ${rangeFrom}`;
+    }
+
+    const result = await sql.unsafe(query, filterValues);
+    return result as any[];
+  }
+
+  return builder as QueryBuilder;
+}
+
+interface SupabaseCompatClient {
+  from(table: string): QueryBuilder;
+  auth: {
+    getUser(): Promise<{ data: { user: null }; error: null }>;
+  };
+}
+
+export async function createClient(): Promise<SupabaseCompatClient> {
+  return {
+    from(table: string) {
+      return buildQuery(table);
+    },
+    auth: {
+      // Auth tidak lagi dihandle via Supabase — return null.
+      // Gunakan getSession() dari @/lib/auth/session untuk auth.
+      async getUser() {
+        return { data: { user: null }, error: null };
       },
     },
-  );
+  };
 }
