@@ -18,7 +18,7 @@ export interface RolePermissionMap {
 
 /** Ambil semua permission untuk semua role — dipakai di UI matrix */
 export async function getAllRolePermissions(): Promise<RolePermissionMap> {
-  const admin = createAdminClient();
+  const admin = await createAdminClient();
   const { data, error } = await admin
     .from('role_permissions')
     .select('role, path, can_view')
@@ -38,7 +38,7 @@ export async function getAllRolePermissions(): Promise<RolePermissionMap> {
 
 /** Ambil path yang boleh dilihat untuk 1 role — dipakai di DashboardLayout */
 export async function getAllowedPathsForRole(role: string): Promise<string[]> {
-  const admin = createAdminClient();
+  const admin = await createAdminClient();
   const { data, error } = await admin
     .from('role_permissions')
     .select('path')
@@ -63,7 +63,7 @@ export async function saveRolePermissions(
     throw new Error('Permission role owner tidak dapat diubah.');
   }
 
-  const admin = createAdminClient();
+  const admin = await createAdminClient();
 
   const rows = permissions.map(p => ({
     role,

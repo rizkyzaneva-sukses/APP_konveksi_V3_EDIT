@@ -21,6 +21,7 @@ interface QueryBuilder<T = Record<string, unknown>> {
   delete(): QueryBuilder<T>;
   eq(column: string, value: unknown): QueryBuilder<T>;
   neq(column: string, value: unknown): QueryBuilder<T>;
+  not(column: string, operator: string, value: unknown): QueryBuilder<T>;
   gt(column: string, value: unknown): QueryBuilder<T>;
   gte(column: string, value: unknown): QueryBuilder<T>;
   lt(column: string, value: unknown): QueryBuilder<T>;
@@ -30,6 +31,8 @@ interface QueryBuilder<T = Record<string, unknown>> {
   like(column: string, pattern: string): QueryBuilder<T>;
   ilike(column: string, pattern: string): QueryBuilder<T>;
   contains(column: string, value: unknown): QueryBuilder<T>;
+  match(criteria: Record<string, unknown>): QueryBuilder<T>;
+  upsert(data: Record<string, unknown> | Record<string, unknown>[], options?: { onConflict?: string }): QueryBuilder<T>;
   order(column: string, options?: { ascending?: boolean }): QueryBuilder<T>;
   limit(count: number): QueryBuilder<T>;
   range(from: number, to: number): QueryBuilder<T>;
@@ -136,6 +139,43 @@ function buildQuery(table: string) {
       filters.push(`"${column}" @> ${addParam(JSON.stringify(value))}::jsonb`);
       return builder;
     },
+    not(column: string, operator: string, value: unknown) {
+      // Supports: .not('column', 'is', null) → column IS NOT NULL
+      //           .not('column', 'eq', val)  → column != val
+      if (operator === 'is' && value === null) {
+        filters.push(`"${column}" IS NOT NULL`);
+      } else if (operator === 'eq') {
+        filters.push(`"${column}" != ${addParam(value)}`);
+      } else if (operator === 'in' && Array.isArray(value)) {
+        if (value.length === 0) {
+          filters.push('TRUE');
+        } else {
+          const placeholders = value.map((v: unknown) => addParam(v)).join(', ');
+          filters.push(`"${column}" NOT IN (${placeholders})`);
+        }
+      } else {
+        // Fallback: NOT (column operator value)
+        filters.push(`NOT ("${column}" ${operator.toUpperCase()} ${addParam(value)})`);
+      }
+      return builder;
+    },
+    match(criteria: Record<string, unknown>) {
+      Object.entries(criteria).forEach(([col, val]) => {
+        filters.push(`"${col}" = ${addParam(val)}`);
+      });
+      return builder;
+    },
+    upsert(data: Record<string, unknown> | Record<string, unknown>[], options?: { onConflict?: string }) {
+      operation = 'insert';
+      insertData = data;
+      // Build ON CONFLICT clause
+      const conflictCols = options?.onConflict
+        ? options.onConflict.split(',').map(c => `"${c.trim()}"`).join(', ')
+        : null;
+      // Store conflict info for use in execute()
+      (builder as any).__upsertConflict = conflictCols;
+      return builder;
+    },
     order(column: string, options?: { ascending?: boolean }) {
       orders.push({ column, ascending: options?.ascending ?? true });
       return builder;
@@ -191,6 +231,18 @@ function buildQuery(table: string) {
         return '(' + columns.map(c => addParam(row[c])).join(', ') + ')';
       }).join(', ');
       query = `INSERT INTO "${table}" (${colStr}) VALUES ${valStr}`;
+      // Handle upsert (ON CONFLICT DO UPDATE)
+      const upsertConflict = (builder as any).__upsertConflict;
+      if (upsertConflict) {
+        const updateClauses = columns
+          .filter(c => !upsertConflict.includes(`"${c}"`))
+          .map(c => `"${c}" = EXCLUDED."${c}"`).join(', ');
+        if (updateClauses) {
+          query += ` ON CONFLICT (${upsertConflict}) DO UPDATE SET ${updateClauses}`;
+        } else {
+          query += ` ON CONFLICT (${upsertConflict}) DO NOTHING`;
+        }
+      }
       if (returnSelect) {
         query += ` RETURNING ${selectColumns === '*' ? '*' : selectColumns.split(',').map(c => `"${c.trim()}"`).join(', ')}`;
       }
@@ -223,7 +275,7 @@ function buildQuery(table: string) {
       query += ` LIMIT ${rangeTo - rangeFrom + 1} OFFSET ${rangeFrom}`;
     }
 
-    const result = await sql.unsafe(query, filterValues);
+    const result = await sql.unsafe(query, filterValues as any);
     return result as any[];
   }
 
@@ -232,6 +284,7 @@ function buildQuery(table: string) {
 
 interface SupabaseCompatClient {
   from(table: string): QueryBuilder;
+  rpc(fn: string, params?: Record<string, unknown>): Promise<{ data: any; error: Error | null }>;
   auth: {
     getUser(): Promise<{ data: { user: null }; error: null }>;
   };
@@ -241,6 +294,36 @@ export async function createClient(): Promise<SupabaseCompatClient> {
   return {
     from(table: string) {
       return buildQuery(table);
+    },
+    async rpc(fn: string, params?: Record<string, unknown>): Promise<{ data: any; error: Error | null }> {
+      try {
+        // Build a SELECT query to call a PostgreSQL function
+        let query: string;
+        const paramValues: unknown[] = [];
+        let paramIdx = 1;
+
+        if (params && Object.keys(params).length > 0) {
+          const paramStr = Object.entries(params)
+            .map(([key, val]) => {
+              paramValues.push(val);
+              return `${key} => $${paramIdx++}`;
+            })
+            .join(', ');
+          query = `SELECT * FROM ${fn}(${paramStr})`;
+        } else {
+          query = `SELECT * FROM ${fn}()`;
+        }
+
+        const result = await sql.unsafe(query, paramValues as any);
+        const rows = result as any[];
+        // If single row with single column, return the value directly
+        if (rows.length === 1 && Object.keys(rows[0]).length === 1) {
+          return { data: Object.values(rows[0])[0], error: null };
+        }
+        return { data: rows.length === 1 ? rows[0] : rows, error: null };
+      } catch (e: any) {
+        return { data: null, error: e };
+      }
     },
     auth: {
       // Auth tidak lagi dihandle via Supabase — return null.

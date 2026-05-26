@@ -6,8 +6,8 @@
 
 import { createClient } from './server';
 
-export const createAdminClient = () => {
+export const createAdminClient = async () => {
   // Karena kita langsung query ke PostgreSQL, tidak ada perbedaan privilege.
   // Semua query berjalan dengan full access ke database.
-  return createClient();
+  return await createClient();
 };
