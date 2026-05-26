@@ -133,15 +133,17 @@ export async function getDashboardKPI(
     .filter((s) => pipelineCount[s] !== undefined)
     .map((s) => ({ tahap: s, jumlah: pipelineCount[s] ?? 0 }));
 
-  // ── 3. Reject Bulan Ini ──────────────────────────────────────────────────────
-  const { count: reject_bulan_ini, error: rejectError } = await supabase
-    .from('reject_log')
-    .select('id', { count: 'exact', head: true })
+  // ── 3. Reject Bulan Ini (dari koreksi_qty tipe reject) ───────────────────────
+  const { data: rejectData, error: rejectError } = await supabase
+    .from('koreksi_qty')
+    .select('id')
     .eq('tenant_id', TENANT_ID)
+    .eq('tipe', 'reject')
     .gte('created_at', `${start}T00:00:00`)
     .lte('created_at', `${end}T23:59:59`);
 
-  if (rejectError) throw new Error('reject_log: ' + rejectError.message);
+  if (rejectError) console.error('koreksi_qty reject:', rejectError.message);
+  const reject_bulan_ini = (rejectData ?? []).length;
 
   // ── 4. Gaji Belum Bayar (outstanding, tanpa filter bulan/tahun) ───────────────
   const { data: ledgerData, error: ledgerError } = await supabase
@@ -174,18 +176,19 @@ export async function getDashboardKPI(
     0
   );
 
-  // ── 6. Total Bayar Gaji Bulan Ini ────────────────────────────────────────────
+  // ── 6. Total Bayar Gaji Bulan Ini (dari gaji_ledger status lunas) ─────────────
   const { data: paymentData, error: paymentError } = await supabase
-    .from('gaji_payment')
-    .select('total_bayar')
+    .from('gaji_ledger')
+    .select('total')
     .eq('tenant_id', TENANT_ID)
+    .eq('status', 'lunas')
     .gte('tanggal_bayar', `${start}`)
     .lte('tanggal_bayar', `${end}`);
 
-  if (paymentError) throw new Error('gaji_payment: ' + paymentError.message);
+  if (paymentError) console.error('gaji_ledger payment:', paymentError.message);
 
   const total_bayar_gaji_bulan_ini = (paymentData ?? []).reduce(
-    (acc: number, row: any) => acc + (Number(row.total_bayar) || 0),
+    (acc: number, row: any) => acc + (Number(row.total) || 0),
     0
   );
 

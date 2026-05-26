@@ -1,11 +1,59 @@
 'use server';
 
-import { createAdminClient } from '@/lib/supabase/admin';
-import { createClient } from '@/lib/supabase/server';
-import { getCurrentUserProfile } from '@/lib/auth/permissions';
+import { getCurrentUserProfile, canAccessPage } from '@/lib/auth/permissions';
 import { revalidatePath } from 'next/cache';
 
-const TENANT_ID = 'STX-001';
+const ALL_APP_PATHS = [
+  '/app/dashboard',
+  '/app/produksi/input-po',
+  '/app/produksi/po/import',
+  '/app/produksi/antrian-cutting',
+  '/app/produksi/scan/cutting',
+  '/app/produksi/scan/jahit',
+  '/app/produksi/scan/lubang-kancing',
+  '/app/produksi/scan/buang-benang',
+  '/app/produksi/scan/qc',
+  '/app/produksi/scan/steam',
+  '/app/produksi/scan/packing',
+  '/app/produksi/monitoring',
+  '/app/produksi/approval-qty',
+  '/app/produksi/reject',
+  '/app/pengiriman/buat-surat-jalan',
+  '/app/pengiriman/riwayat',
+  '/app/pengiriman/validasi',
+  '/app/penggajian/rekap-gaji',
+  '/app/penggajian/kasbon',
+  '/app/penggajian/slip-gaji',
+  '/app/master/detail',
+  '/app/master/produk',
+  '/app/master/model',
+  '/app/master/karyawan',
+  '/app/master/jabatan',
+  '/app/master/klien',
+  '/app/master/satuan',
+  '/app/master/reject',
+  '/app/master/kategori-trx',
+  '/app/master/komponen-hpp',
+  '/app/master/aksesori-warna',
+  '/app/master/users',
+  '/app/inventory/overview',
+  '/app/inventory/transaksi-keluar',
+  '/app/inventory/alert-order',
+  '/app/inventory/pemakaian-bahan',
+  '/app/inventory/ambil-benang',
+  '/app/inventory/harga-referensi',
+  '/app/keuangan/ringkasan',
+  '/app/keuangan/jurnal-produksi',
+  '/app/keuangan/buku-kas',
+  '/app/keuangan/invoice',
+  '/app/keuangan/laporan-lr',
+  '/app/keuangan/laporan-po',
+  '/app/keuangan/overhead-setting',
+  '/app/keuangan/laporan-bulan',
+  '/app/keuangan/laporan-gaji',
+  '/app/keuangan/laporan-reject',
+  '/app/settings',
+];
 
 export interface PathPermission {
   path: string;
@@ -16,41 +64,29 @@ export interface RolePermissionMap {
   [role: string]: PathPermission[];
 }
 
-/** Ambil semua permission untuk semua role — dipakai di UI matrix */
+/** Ambil semua permission untuk semua role (computed dari canAccessPage matrix) */
 export async function getAllRolePermissions(): Promise<RolePermissionMap> {
-  const admin = await createAdminClient();
-  const { data, error } = await admin
-    .from('role_permissions')
-    .select('role, path, can_view')
-    .eq('tenant_id', TENANT_ID)
-    .order('role')
-    .order('path');
-
-  if (error) throw new Error(error.message);
-
+  const roles = ['admin_produksi', 'admin_keuangan', 'supervisor', 'mandor'];
   const map: RolePermissionMap = {};
-  (data ?? []).forEach((row: any) => {
-    if (!map[row.role]) map[row.role] = [];
-    map[row.role].push({ path: row.path, can_view: row.can_view });
-  });
+  for (const role of roles) {
+    map[role] = ALL_APP_PATHS.map(path => ({
+      path,
+      can_view: canAccessPage(role as any, path.replace('/app/', '').split('/')[0]),
+    }));
+  }
   return map;
 }
 
-/** Ambil path yang boleh dilihat untuk 1 role — dipakai di DashboardLayout */
+/** Ambil path yang boleh dilihat untuk 1 role */
 export async function getAllowedPathsForRole(role: string): Promise<string[]> {
-  const admin = await createAdminClient();
-  const { data, error } = await admin
-    .from('role_permissions')
-    .select('path')
-    .eq('role', role)
-    .eq('can_view', true)
-    .eq('tenant_id', TENANT_ID);
-
-  if (error) return [];
-  return (data ?? []).map((r: any) => r.path);
+  // Use canAccessPage matrix as source of truth
+  return ALL_APP_PATHS.filter(path => {
+    const segment = path.replace('/app/', '').split('/')[0];
+    return canAccessPage(role as any, segment);
+  });
 }
 
-/** Simpan perubahan permission (bulk upsert) */
+/** Simpan perubahan permission — no-op karena permissions dikelola via code */
 export async function saveRolePermissions(
   role: string,
   permissions: PathPermission[]
@@ -62,22 +98,6 @@ export async function saveRolePermissions(
   if (role === 'owner') {
     throw new Error('Permission role owner tidak dapat diubah.');
   }
-
-  const admin = await createAdminClient();
-
-  const rows = permissions.map(p => ({
-    role,
-    path: p.path,
-    can_view: p.can_view,
-    tenant_id: TENANT_ID,
-    updated_at: new Date().toISOString(),
-  }));
-
-  const { error } = await admin
-    .from('role_permissions')
-    .upsert(rows, { onConflict: 'role,path,tenant_id' });
-
-  if (error) throw new Error(error.message);
-
+  // Permissions managed in code via canAccessPage — nothing to persist
   revalidatePath('/app/master/users');
 }

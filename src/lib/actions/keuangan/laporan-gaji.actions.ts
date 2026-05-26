@@ -96,11 +96,12 @@ export async function getLaporanGaji(filters?: {
     }
   });
 
-  // 3. Fetch history pembayaran dari gaji_payment (1 row = 1 event bayar)
+  // 3. History pembayaran dari gaji_ledger status lunas
   let paymentQuery = supabase
-    .from('gaji_payment')
-    .select('tanggal_bayar, total_bayar, karyawan:karyawan_id(nama)')
+    .from('gaji_ledger')
+    .select('tanggal_bayar, total, karyawan_id')
     .eq('tenant_id', TENANT_ID)
+    .eq('status', 'lunas')
     .order('tanggal_bayar', { ascending: false });
 
   if (filters?.bulan && filters?.tahun) {
@@ -117,12 +118,12 @@ export async function getLaporanGaji(filters?: {
 
   const { data: paymentData, error: paymentError } = await paymentQuery;
 
-  if (paymentError) throw new Error(paymentError.message);
+  if (paymentError) console.error('laporan gaji payment:', paymentError.message);
 
   const history_pembayaran = (paymentData ?? []).map((p: any) => ({
-    tanggal_bayar: p.tanggal_bayar,
-    karyawan_nama: (p.karyawan as any)?.nama ?? '-',
-    jumlah_dibayar: Number(p.total_bayar) || 0,
+    tanggal_bayar: p.tanggal_bayar ?? '-',
+    karyawan_nama: karyawanMap[p.karyawan_id]?.nama ?? '-',
+    jumlah_dibayar: Number(p.total) || 0,
   }));
 
   // 4. Kasbon aggregation

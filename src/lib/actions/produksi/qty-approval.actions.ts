@@ -1,18 +1,15 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { getSession } from '@/lib/auth/session';
 import bcrypt from 'bcryptjs';
 
 const TENANT_ID = 'STX-001';
 
-/** Helper to resolve the current user's ID */
 async function resolveUserId(): Promise<string> {
-  const supabase = await createClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) {
-    throw new Error('Unauthorized: User session not found.');
-  }
-  return user.id;
+  const session = await getSession();
+  if (!session) throw new Error('Unauthorized: User session not found.');
+  return session.userId;
 }
 
 export interface AlasanQty {
@@ -45,7 +42,7 @@ export async function getAlasanQty(): Promise<AlasanQty[]> {
     .eq('tenant_id', TENANT_ID)
     .order('urutan');
 
-  if (error) throw new Error(error.message);
+  if (error) { console.error('getAlasanQty:', error.message); return []; }
   return (data ?? []) as AlasanQty[];
 }
 
@@ -75,7 +72,7 @@ export async function getPendingApprovals(): Promise<QtyApprovalRequest[]> {
     .eq('status', 'pending')
     .order('created_at', { ascending: true });
 
-  if (error) throw new Error(error.message);
+  if (error) { console.error('getPendingApprovals:', error.message); return []; }
 
   return (data ?? []).map((req: any) => ({
     id: req.id,

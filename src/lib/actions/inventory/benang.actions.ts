@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { getSession } from '@/lib/auth/session';
 
 const TENANT_ID = 'STX-001';
 
@@ -59,7 +60,7 @@ export async function getBenangItems(): Promise<BenangItem[]> {
     .ilike('nama', '%benang%')
     .order('nama');
 
-  if (error) throw new Error(error.message);
+  if (error) { console.error('getBenangItems:', error.message); return []; }
 
   return (data ?? []).map((d: any) => ({
     id             : d.id,
@@ -78,14 +79,15 @@ export async function getBenangItems(): Promise<BenangItem[]> {
 export async function catatAmbilBenang(input: AmbilBenangInput): Promise<string> {
   const supabase = await createClient();
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const session = await getSession();
+  const userId = session?.userId ?? null;
 
   const { data, error } = await supabase.rpc('catat_ambil_benang', {
     p_inventory_item_id : input.inventory_item_id,
     p_qty               : input.qty,
     p_tanggal           : input.tanggal,
     p_keterangan        : input.keterangan ?? null,
-    p_user_id           : user?.id ?? null,
+    p_user_id           : userId,
     p_tenant_id         : TENANT_ID,
   });
 
@@ -108,7 +110,7 @@ export async function getRiwayatAmbilBenang(
     p_offset   : offset,
   });
 
-  if (error) throw new Error(error.message);
+  if (error) { console.error('getRiwayatAmbilBenang:', error.message); return []; }
 
   return (data ?? []).map((r: any) => ({
     id             : r.id,
@@ -140,7 +142,7 @@ export async function getOverheadBenang(
     p_tgl_selesai : tgl_selesai ?? null,
   });
 
-  if (error) throw new Error(error.message);
+  if (error) { console.error('getOverheadBenang:', error.message); return { total_biaya_benang: 0, total_pcs_jahit: 0, rate_per_pcs: 0, record_count: 0 }; }
 
   const r = Array.isArray(data) ? data[0] : data;
   return {
@@ -169,7 +171,8 @@ export async function submitBenangSerahTerima(
   items: BenangSerahTerimaInput[]
 ): Promise<void> {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const session = await getSession();
+  const userId = session?.userId ?? null;
 
   for (const item of items) {
     const { error } = await supabase.rpc('catat_benang_serah_terima', {
@@ -179,7 +182,7 @@ export async function submitBenangSerahTerima(
       p_tanggal           : item.tanggal,
       p_bundle_ids        : item.bundle_ids,
       p_keterangan        : item.keterangan ?? null,
-      p_user_id           : user?.id ?? null,
+      p_user_id           : userId,
       p_tenant_id         : TENANT_ID,
     });
     if (error) throw new Error(`Gagal catat benang: ${error.message}`);

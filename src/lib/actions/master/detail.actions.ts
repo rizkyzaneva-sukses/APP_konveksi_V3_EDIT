@@ -32,8 +32,8 @@ export async function getKategoriProduk() {
     .select('*')
     .eq('tenant_id', 'STX-001')
     .order('nama', { ascending: true });
-  if (error) throw new Error(error.message);
-  return data;
+  if (error) { console.error('getKategoriProduk:', error.message); return []; }
+  return data ?? [];
 }
 
 export async function createKategoriProduk(data: KategoriProdukInput) {
@@ -80,8 +80,8 @@ export async function getModelProduk(kategoriId?: string) {
   }
   
   const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  return data;
+  if (error) { console.error('getModelProduk:', error.message); return []; }
+  return data ?? [];
 }
 
 export async function createModelProduk(data: ModelProdukInput) {
@@ -120,8 +120,8 @@ export async function getModelById(id: string) {
     .eq('id', id)
     .eq('tenant_id', 'STX-001')
     .single();
-  
-  if (error) throw new Error(error.message);
+
+  if (error) { console.error('getModelById:', error.message); return null; }
   return data;
 }
 
@@ -135,8 +135,8 @@ export async function getSize() {
     .select('*')
     .eq('tenant_id', 'STX-001')
     .order('urutan', { ascending: true });
-  if (error) throw new Error(error.message);
-  return data;
+  if (error) { console.error('getSize:', error.message); return []; }
+  return data ?? [];
 }
 
 export async function createSize(data: SizeInput) {
@@ -177,8 +177,8 @@ export async function getWarna() {
     .select('*')
     .eq('tenant_id', 'STX-001')
     .order('nama', { ascending: true });
-  if (error) throw new Error(error.message);
-  return data;
+  if (error) { console.error('getWarna:', error.message); return []; }
+  return data ?? [];
 }
 
 export async function createWarna(data: WarnaInput) {
@@ -216,6 +216,6 @@ export async function getModelList() {
     .select('id, nama, kategori_produk:kategori_id(nama)')
     .eq('tenant_id', 'STX-001')
     .order('nama');
-  if (error) throw new Error(error.message);
+  if (error) { console.error('getModelList:', error.message); return []; }
   return data ?? [];
 }

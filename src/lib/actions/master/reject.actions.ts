@@ -24,8 +24,8 @@ export async function getJenisReject() {
     .select('*')
     .eq('tenant_id', 'STX-001')
     .order('nama', { ascending: true });
-  if (error) throw new Error(error.message);
-  return data;
+  if (error) { console.error('getJenisReject:', error.message); return []; }
+  return data ?? [];
 }
 
 export async function createJenisReject(data: JenisRejectInput) {
@@ -66,8 +66,8 @@ export async function getAlasanReject() {
     .select('*, jenis_reject(nama)')
     .eq('tenant_id', 'STX-001')
     .order('nama', { ascending: true });
-  if (error) throw new Error(error.message);
-  return data;
+  if (error) { console.error('getAlasanReject:', error.message); return []; }
+  return data ?? [];
 }
 
 export async function createAlasanReject(data: AlasanRejectInput) {

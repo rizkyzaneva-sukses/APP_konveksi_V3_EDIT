@@ -153,7 +153,7 @@ export async function getModelList(): Promise<{ id: string; nama: string }[]> {
     .eq('tenant_id', TENANT_ID)
     .order('nama');
 
-  if (error) throw new Error(error.message);
+  if (error) return [];
   return data || [];
 }
 
@@ -170,7 +170,7 @@ export async function getWarnaByModel(modelId: string): Promise<{ id: string; na
     .eq('tenant_id', TENANT_ID)
     .eq('aktif', true);
 
-  if (error) throw new Error(error.message);
+  if (error) return [];
 
   interface WarnaItem { id: string; nama: string; kode_hex: string | null }
   const warnaMap = new Map<string, WarnaItem>();
@@ -196,7 +196,7 @@ export async function getSizeByModel(modelId: string): Promise<{ id: string; nam
     .eq('tenant_id', TENANT_ID)
     .eq('aktif', true);
 
-  if (error) throw new Error(error.message);
+  if (error) return [];
 
   interface SizeItem { id: string; nama: string; urutan: number }
   const sizeMap = new Map<string, SizeItem>();
@@ -226,7 +226,7 @@ export async function getProdukId(modelId: string, warnaId: string, sizeId: stri
     .limit(1)
     .maybeSingle();
 
-  if (error) throw new Error(error.message);
+  if (error) return null;
   return data ? data.id : null;
 }
 

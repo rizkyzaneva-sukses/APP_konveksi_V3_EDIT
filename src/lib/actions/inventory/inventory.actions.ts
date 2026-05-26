@@ -1,17 +1,15 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { getSession } from '@/lib/auth/session';
 import { getCurrentUserProfile } from '@/lib/auth/permissions';
 
 const TENANT_ID = 'STX-001';
 
 async function resolveUserId() {
-  const supabase = await createClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) {
-    throw new Error('User tidak terautentikasi');
-  }
-  return user.id;
+  const session = await getSession();
+  if (!session) throw new Error('User tidak terautentikasi');
+  return session.userId;
 }
 
 // --- INTERFACES ---
@@ -84,7 +82,7 @@ export async function getInventoryOverview(): Promise<InventoryOverviewItem[]> {
     .eq('tenant_id', TENANT_ID)
     .order('nama');
 
-  if (itemError) throw new Error(itemError.message);
+  if (itemError) { console.error('getInventoryOverview items:', itemError.message); return []; }
 
   // B. Fetch batch counts (hanya yang masih ada sisa)
   const { data: batches, error: batchError } = await supabase
@@ -93,7 +91,7 @@ export async function getInventoryOverview(): Promise<InventoryOverviewItem[]> {
     .eq('tenant_id', TENANT_ID)
     .gt('qty_sisa', 0);
 
-  if (batchError) throw new Error(batchError.message);
+  if (batchError) console.error('getInventoryOverview batches:', batchError.message);
 
   // C. Fetch warna lookup (tanpa join — query langsung ke tabel warna)
   const warnaIds = [...new Set((items ?? []).map(i => i.warna_id).filter(Boolean))] as string[];
@@ -293,7 +291,7 @@ export async function getKategoriTrxBahan(): Promise<{ id: string; nama: string 
     .eq('aktif', true)
     .order('nama');
 
-  if (error) throw new Error(error.message);
+  if (error) { console.error('getKategoriTrxBahan:', error.message); return []; }
   return data ?? [];
 }
 

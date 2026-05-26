@@ -64,7 +64,7 @@ export async function getAntrianPerTahap(tahap: TahapKey, page: number, pageSize
     .range(offset, offset + pageSize - 1)
     .order('created_at', { ascending: true });
 
-  if (error) throw new Error(`Gagal ambil antrian ${tahap}: ${error.message}`);
+  if (error) { console.error(`getAntrianForStage ${tahap}:`, error.message); return { data: [], total: 0 }; }
 
   let mappedData: AntrianBundleItem[] = (data as any[]).map(item => {
     const stageInfo = item.status_tahap?.[tahap];
@@ -136,7 +136,7 @@ export async function getSelesaiPerTahap(tahap: TahapKey, page: number, pageSize
     .range(offset, offset + pageSize - 1)
     .order('created_at', { ascending: false });
 
-  if (error) throw new Error(`Gagal ambil data selesai ${tahap}: ${error.message}`);
+  if (error) { console.error(`getSelesaiPerTahap ${tahap}:`, error.message); return { data: [], total: 0 }; }
 
   // Ambil list karyawan_id untuk join manual (Supabase tidak support join via JSONB field secara langsung)
   const karyawanIds = Array.from(new Set((data as any[]).map(item => item.status_tahap?.[tahap]?.karyawan_id).filter(Boolean)));

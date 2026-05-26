@@ -19,8 +19,8 @@ export async function getKlien() {
     .eq('tenant_id', 'STX-001')
     .order('nama', { ascending: true });
 
-  if (error) throw new Error(error.message);
-  return data;
+  if (error) { console.error('getKlien:', error.message); return []; }
+  return data ?? [];
 }
 
 /**

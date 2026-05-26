@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { getSession } from '@/lib/auth/session';
 import { revalidatePath } from 'next/cache';
 
 const TENANT_ID = 'STX-001';
@@ -65,10 +66,9 @@ export interface PendingBundle {
 // ─── HELPER ──────────────────────────────────────────────────────────────────
 
 async function resolveUserId(): Promise<string> {
-  const supabase = await createClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) throw new Error('Unauthorized');
-  return user.id;
+  const session = await getSession();
+  if (!session) throw new Error('Unauthorized');
+  return session.userId;
 }
 
 // ─── FUNGSI 1: getPOCuttingList ───────────────────────────────────────────────
