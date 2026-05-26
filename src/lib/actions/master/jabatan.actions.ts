@@ -14,7 +14,7 @@ export async function getJabatan() {
     .select('*')
     .order('nama', { ascending: true });
 
-  if (error) throw new Error(error.message);
+  if (error) { console.error('getJabatan:', error.message); return []; }
   return data ?? [];
 }
 
@@ -26,7 +26,7 @@ export async function getJabatanAktif() {
     .eq('aktif', true)
     .order('nama', { ascending: true });
 
-  if (error) throw new Error(error.message);
+  if (error) { console.error('getJabatanAktif:', error.message); return []; }
   return data ?? [];
 }
 

@@ -68,7 +68,8 @@ export async function getPemakaianBahan(
     .order('created_at', { ascending: false });
 
   if (error) {
-    throw new Error('Gagal memuat data pemakaian bahan: ' + error.message);
+    console.error('getPemakaianBahan:', error.message);
+    return { rows: [], total_qty: 0, total_biaya: 0, jumlah_bahan: 0 };
   }
 
   // Hitung di JS

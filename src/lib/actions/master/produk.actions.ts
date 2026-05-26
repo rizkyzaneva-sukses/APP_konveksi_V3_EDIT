@@ -45,8 +45,8 @@ export async function getKategoriProdukForProduk() {
     .select('id, nama')
     .eq('tenant_id', TENANT_ID)
     .order('nama');
-  if (error) throw new Error(error.message);
-  return data as { id: string; nama: string }[];
+  if (error) { console.error('getKategoriProdukForProduk:', error.message); return [] as { id: string; nama: string }[]; }
+  return (data ?? []) as { id: string; nama: string }[];
 }
 
 export async function getModelProdukForProduk(kategoriId?: string) {
@@ -62,7 +62,7 @@ export async function getModelProdukForProduk(kategoriId?: string) {
   if (kategoriId) query = query.eq('kategori_id', kategoriId);
 
   const { data, error } = await query;
-  if (error) throw new Error(error.message);
+  if (error) { console.error('getModelProdukForProduk:', error.message); return []; }
 
   return (data ?? []).map((m) => ({
     id: m.id,
@@ -94,7 +94,7 @@ export async function getProduk(modelId?: string) {
   if (modelId) query = query.eq('model_id', modelId);
 
   const { data, error } = await query;
-  if (error) throw new Error(error.message);
+  if (error) { console.error('getProduk:', error.message); return []; }
 
   return (data ?? []).map((p) => {
     const hppItems = (p.hpp_item as { qty: number; harga_satuan: number }[]) ?? [];

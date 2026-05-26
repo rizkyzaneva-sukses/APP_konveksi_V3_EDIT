@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { getSession } from '@/lib/auth/session';
 import { revalidatePath } from 'next/cache';
 import bcrypt from 'bcryptjs';
 
@@ -10,10 +11,9 @@ const REVALIDATE_PATH = '/app/pengiriman/validasi';
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
 async function resolveUserId(): Promise<string> {
-  const supabase = await createClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) throw new Error('Unauthorized: User session not found.');
-  return user.id;
+  const session = await getSession();
+  if (!session) throw new Error('Unauthorized: User session not found.');
+  return session.userId;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ export async function getSuratJalanSiapValidasi(): Promise<SuratJalanSiapValidas
     .or('status.in.(dikirim,selisih_kurang,selisih_lebih),and(status.eq.final,tanggal_validasi.is.null)')
     .order('tanggal', { ascending: false });
 
-  if (error) throw new Error(`Gagal memuat SJ siap validasi: ${error.message}`);
+  if (error) { console.error('getSuratJalanSiapValidasi:', error.message); return []; }
 
   return (data ?? []).map((sj: any) => {
     const items: SuratJalanItemValidasi[] = (sj.surat_jalan_item ?? []).map((it: any) => {

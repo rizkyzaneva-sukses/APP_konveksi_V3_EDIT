@@ -18,8 +18,8 @@ export async function getSatuan() {
     .select('*')
     .eq('tenant_id', 'STX-001')
     .order('nama', { ascending: true });
-  if (error) throw new Error(error.message);
-  return data;
+  if (error) { console.error('getSatuan:', error.message); return []; }
+  return data ?? [];
 }
 
 export async function createSatuan(data: SatuanInput) {

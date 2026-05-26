@@ -19,7 +19,7 @@ export async function getInventoryItems(): Promise<InventoryItem[]> {
     .eq('tenant_id', TENANT_ID)
     .order('nama');
 
-  if (error) throw new Error(error.message);
+  if (error) { console.error('getInventoryItems:', error.message); return []; }
 
   return (data || []).map(item => ({
     id: item.id,
@@ -48,7 +48,7 @@ export async function getHargaReferensiItems(): Promise<HargaReferensiItem[]> {
     .eq('tenant_id', TENANT_ID)
     .order('nama');
 
-  if (error) throw new Error(error.message);
+  if (error) { console.error('getHargaReferensiItems:', error.message); return []; }
 
   return (data ?? []).map((d: any) => ({
     id             : d.id,

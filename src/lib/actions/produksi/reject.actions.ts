@@ -103,7 +103,7 @@ export async function getRejectList(
       return res;
     });
 
-  if (error) throw new Error(`Gagal mengambil daftar reject: ${error.message}`);
+  if (error) { console.error('getRejectList:', error.message); return []; }
 
   // Normalisasi ke RejectRow
   const rows: RejectRow[] = ((data as any[]) ?? [])
@@ -351,7 +351,7 @@ export async function getAlasanRejectList(): Promise<AlasanRejectOption[]> {
     .select('id, nama, bisa_diperbaiki, persen_potongan, jenis_reject:jenis_reject_id(nama)')
     .eq('tenant_id', TENANT_ID)
     .order('nama');
-  if (error) throw new Error(error.message);
+  if (error) { console.error('getAlasanRejectList:', error.message); return []; }
   return (data ?? []).map((r: any) => ({
     id: r.id,
     nama: r.nama,

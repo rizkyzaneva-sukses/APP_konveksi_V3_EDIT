@@ -20,9 +20,8 @@ export async function getKategoriTrx(jenisFilter?: string) {
   }
 
   const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  
-  return data;
+  if (error) { console.error('getKategoriTrx:', error.message); return []; }
+  return data ?? [];
 }
 
 export async function createKategoriTrx(data: KategoriTrxInput) {

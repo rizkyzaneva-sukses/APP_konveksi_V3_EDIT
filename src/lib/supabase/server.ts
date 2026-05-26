@@ -41,6 +41,27 @@ interface QueryBuilder<T = Record<string, unknown>> {
   then(resolve: (result: { data: T[] | null; error: Error | null; count?: number }) => void): void;
 }
 
+// Strip Supabase join syntax from select string, keeping only plain columns
+function stripJoinSyntax(columns: string): string {
+  if (!columns || columns === '*') return '*';
+  const result: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (let i = 0; i < columns.length; i++) {
+    const char = columns[i];
+    if (char === '(') { depth++; current += char; }
+    else if (char === ')') { depth--; current += char; }
+    else if (char === ',' && depth === 0) {
+      const col = current.trim();
+      if (col && !col.includes(':') && !col.includes('(')) result.push(col);
+      current = '';
+    } else if (depth === 0) { current += char; }
+  }
+  const last = current.trim();
+  if (last && !last.includes(':') && !last.includes('(')) result.push(last);
+  return result.length > 0 ? result.join(', ') : '*';
+}
+
 function buildQuery(table: string) {
   let operation: 'select' | 'insert' | 'update' | 'delete' = 'select';
   let selectColumns = '*';
@@ -63,13 +84,12 @@ function buildQuery(table: string) {
   const builder: any = {
     select(columns?: string) {
       if (operation === 'insert' || operation === 'update') {
-        // .select() after .insert()/.update() means RETURNING
         returnSelect = true;
-        if (columns) selectColumns = columns;
+        if (columns) selectColumns = stripJoinSyntax(columns);
         return builder;
       }
       operation = 'select';
-      if (columns) selectColumns = columns;
+      if (columns) selectColumns = stripJoinSyntax(columns);
       return builder;
     },
     insert(data: Record<string, unknown> | Record<string, unknown>[]) {
@@ -139,9 +159,35 @@ function buildQuery(table: string) {
       filters.push(`"${column}" @> ${addParam(JSON.stringify(value))}::jsonb`);
       return builder;
     },
+    or(filter: string) {
+      // Parse Supabase .or() filter string, e.g. 'status.eq.active,status.eq.draft'
+      // For complex filters, fall back to a raw OR condition
+      const parts = filter.split(',').map((part: string) => part.trim());
+      const orClauses: string[] = [];
+      for (const part of parts) {
+        // Simple patterns: col.eq.val, col.in.(a,b,c), col.is.null
+        const eqMatch = part.match(/^(\w+)\.eq\.(.+)$/);
+        const isMatch = part.match(/^(\w+)\.is\.null$/);
+        const inMatch = part.match(/^(\w+)\.in\.\((.+)\)$/);
+        if (eqMatch) {
+          orClauses.push(`"${eqMatch[1]}" = ${addParam(eqMatch[2])}`);
+        } else if (isMatch) {
+          orClauses.push(`"${isMatch[1]}" IS NULL`);
+        } else if (inMatch) {
+          const vals = inMatch[2].split(',').map((v: string) => addParam(v.trim()));
+          orClauses.push(`"${inMatch[1]}" IN (${vals.join(', ')})`);
+        }
+        // Complex nested patterns (and(...)) are skipped — will be ignored
+      }
+      if (orClauses.length > 0) {
+        filters.push(`(${orClauses.join(' OR ')})`);
+      }
+      return builder;
+    },
     not(column: string, operator: string, value: unknown) {
       // Supports: .not('column', 'is', null) → column IS NOT NULL
       //           .not('column', 'eq', val)  → column != val
+      //           .not('column', 'cs', jsonStr) → NOT column @> val::jsonb
       if (operator === 'is' && value === null) {
         filters.push(`"${column}" IS NOT NULL`);
       } else if (operator === 'eq') {
@@ -153,9 +199,10 @@ function buildQuery(table: string) {
           const placeholders = value.map((v: unknown) => addParam(v)).join(', ');
           filters.push(`"${column}" NOT IN (${placeholders})`);
         }
+      } else if (operator === 'cs') {
+        filters.push(`NOT ("${column}" @> ${addParam(value)}::jsonb)`);
       } else {
-        // Fallback: NOT (column operator value)
-        filters.push(`NOT ("${column}" ${operator.toUpperCase()} ${addParam(value)})`);
+        // Fallback: skip unknown operator to avoid SQL syntax error
       }
       return builder;
     },

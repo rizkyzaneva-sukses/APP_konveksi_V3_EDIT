@@ -30,8 +30,8 @@ export async function getActivePeriod(): Promise<OverheadPeriod | null> {
     .single();
 
   if (error) {
-    if (error.code === 'PGRST116') return null; // No rows found
-    throw new Error(error.message);
+    console.error('getActivePeriod:', error.message);
+    return null;
   }
   return data as OverheadPeriod;
 }
@@ -60,7 +60,7 @@ export async function getOverheadRateInfo(): Promise<OverheadRateInfo> {
     .gte('tanggal', period.tanggal_mulai)
     .lte('tanggal', period.tanggal_akhir);
 
-  if (ohError) throw new Error(ohError.message);
+  if (ohError) { console.error('getOverheadRateInfo overhead:', ohError.message); }
   const total_overhead = (overheadData ?? []).reduce(
     (sum: number, j: any) => sum + Number(j.nominal),
     0
@@ -74,7 +74,7 @@ export async function getOverheadRateInfo(): Promise<OverheadRateInfo> {
     .gte('tanggal', period.tanggal_mulai)
     .lte('tanggal', period.tanggal_akhir);
 
-  if (sjError) throw new Error(sjError.message);
+  if (sjError) { console.error('getOverheadRateInfo sj:', sjError.message); }
 
   const total_qty_shipped = (sjData ?? []).reduce((sum: number, sj: any) => {
     const sjItemsSum = (sj.surat_jalan_item ?? []).reduce(

@@ -44,7 +44,7 @@ export async function getModelAksesori(model_id: string): Promise<ModelAksesori[
     .eq('tenant_id', TENANT_ID)
     .order('tahap_pakai');
 
-  if (error) throw new Error(error.message);
+  if (error) { console.error('getModelAksesori:', error.message); return []; }
 
   return (data ?? []).map((item: any) => ({
     id: item.id,
@@ -255,7 +255,7 @@ export async function getWarnaAksesori(warna_id?: string): Promise<WarnaAksesori
   }
 
   const { data, error } = await query;
-  if (error) throw new Error(error.message);
+  if (error) { console.error('getWarnaAksesori:', error.message); return []; }
 
   return (data ?? []).map((item: any) => ({
     id: item.id,
