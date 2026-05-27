@@ -6,3 +6,17 @@ node_modules
 .env
 .env.*
 !.env.example
+
+# Unnecessary in Docker build context
+*.xlsx
+*.txt
+docs/
+scripts/
+supabase/
+overhead_period_migration.sql
+create-db.js
+create-role.js
+reset-db.js
+run-sql-migrations.js
+AGENTS.md
+CLAUDE.md
