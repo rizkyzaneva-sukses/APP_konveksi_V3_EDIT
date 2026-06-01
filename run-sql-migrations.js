@@ -2,7 +2,7 @@ const postgres = require('postgres');
 const fs = require('fs');
 const path = require('path');
 
-const connectionString = "postgresql://postgres:100Jtperhari@localhost:5432/stitchlyx";
+const connectionString = process.env.DATABASE_URL || "postgres://konveksifz:100jtperhari%40%40@elyasr-pribadi_konveksi-fz-dbb:5432/konveksi-fz-dbb?sslmode=disable";
 const sql = postgres(connectionString, { max: 1 });
 
 async function runMigrations() {
