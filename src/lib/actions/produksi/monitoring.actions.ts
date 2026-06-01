@@ -59,42 +59,27 @@ export async function getMonitoringStats(): Promise<MonitoringStats> {
 
   const supabase = await createClient();
 
-  // 1. Hitung PO Aktif
-  const { count: poAktifCount, error: poErr } = await supabase
-    .from('po')
-    .select('*', { count: 'exact', head: true })
-    .eq('status', 'aktif')
-    .eq('tenant_id', TENANT_ID);
+  // Run all 4 queries in PARALLEL instead of sequential waterfall
+  const [poResult, bundleResult, logsResult, warnings] = await Promise.all([
+    // 1. PO Aktif
+    supabase.from('po').select('id').eq('status', 'aktif').eq('tenant_id', TENANT_ID),
+    // 2. Total Bundle
+    supabase.from('bundle').select('id').eq('tenant_id', TENANT_ID),
+    // 3. Bundle Selesai (packing selesai)
+    supabase.from('scan_log').select('bundle_id').eq('tahap', 'packing').eq('tipe', 'selesai').eq('tenant_id', TENANT_ID),
+    // 4. Warnings (mandek)
+    getMonitoringWarnings(24),
+  ]);
 
-  if (poErr) throw new Error(`Gagal hitung PO aktif: ${poErr.message}`);
+  if (poResult.error) throw new Error(`Gagal hitung PO aktif: ${poResult.error.message}`);
+  if (bundleResult.error) throw new Error(`Gagal hitung total bundle: ${bundleResult.error.message}`);
+  if (logsResult.error) throw new Error(`Gagal ambil logs packing: ${logsResult.error.message}`);
 
-  // 2. Hitung Total Bundle
-  const { count: bundleCount, error: bdlErr } = await supabase
-    .from('bundle')
-    .select('*', { count: 'exact', head: true })
-    .eq('tenant_id', TENANT_ID);
-
-  if (bdlErr) throw new Error(`Gagal hitung total bundle: ${bdlErr.message}`);
-
-  // 3. Hitung Bundle Selesai (sudah discan packing selesai)
-  // Gunakan unique bundle_id dari scan_log
-  const { data: logs, error: logsErr } = await supabase
-    .from('scan_log')
-    .select('bundle_id')
-    .eq('tahap', 'packing')
-    .eq('tipe', 'selesai')
-    .eq('tenant_id', TENANT_ID);
-
-  if (logsErr) throw new Error(`Gagal ambil logs packing: ${logsErr.message}`);
-
-  const uniqueSelesaiCount = new Set((logs ?? []).map((l: any) => l.bundle_id)).size;
-
-  // M-04: Calculate warnings count (default 24h)
-  const warnings = await getMonitoringWarnings(24);
+  const uniqueSelesaiCount = new Set((logsResult.data ?? []).map((l: any) => l.bundle_id)).size;
 
   return {
-    po_aktif: poAktifCount || 0,
-    total_bundle: bundleCount || 0,
+    po_aktif: (poResult.data ?? []).length,
+    total_bundle: (bundleResult.data ?? []).length,
     bundle_selesai: uniqueSelesaiCount,
     bermasalah: warnings.length,
   };

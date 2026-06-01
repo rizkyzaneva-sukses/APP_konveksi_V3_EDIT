@@ -46,38 +46,27 @@ export async function getRingkasanKeuangan(
 
   const supabase = await createClient();
 
-  // ─── 1. Jurnal bulan berjalan ───
+  // ─── 1. Jurnal bulan berjalan (ALL 3 queries in PARALLEL) ───
   const lastDayCurrent = new Date(currentTahun, currentBulan, 0).getDate();
-  const { data: jurnalBulanIni, error: jurnalErr } = await supabase
-    .from('jurnal_entry')
-    .select('jenis, nominal')
-    .eq('tenant_id', TENANT_ID)
-    .gte('tanggal', `${currentTahun}-${mm}-01`)
-    .lte('tanggal', `${currentTahun}-${mm}-${String(lastDayCurrent).padStart(2, '0')}`);
+  const currentStart = `${currentTahun}-${mm}-01`;
+  const currentEnd = `${currentTahun}-${mm}-${String(lastDayCurrent).padStart(2, '0')}`;
 
-  if (jurnalErr) throw new Error(jurnalErr.message);
+  const [jurnalRes, bukuKasRes, gajiLedgerRes] = await Promise.all([
+    supabase.from('jurnal_entry').select('jenis, nominal')
+      .eq('tenant_id', TENANT_ID).gte('tanggal', currentStart).lte('tanggal', currentEnd),
+    supabase.from('buku_kas').select('nominal')
+      .eq('tenant_id', TENANT_ID).eq('tipe', 'masuk').gte('tanggal', currentStart).lte('tanggal', currentEnd),
+    supabase.from('gaji_ledger').select('total, tipe')
+      .eq('tenant_id', TENANT_ID).in('status', ['belum_lunas', 'lunas']).gte('tanggal', currentStart).lte('tanggal', currentEnd),
+  ]);
 
-  // Buku kas tipe='masuk' untuk bulan berjalan (DP klien, pelunasan, dll)
-  const { data: bukuKasBulanIni, error: bukuKasBulanErr } = await supabase
-    .from('buku_kas')
-    .select('nominal')
-    .eq('tenant_id', TENANT_ID)
-    .eq('tipe', 'masuk')
-    .gte('tanggal', `${currentTahun}-${mm}-01`)
-    .lte('tanggal', `${currentTahun}-${mm}-${String(lastDayCurrent).padStart(2, '0')}`);
+  if (jurnalRes.error) throw new Error(jurnalRes.error.message);
+  if (bukuKasRes.error) throw new Error(bukuKasRes.error.message);
+  if (gajiLedgerRes.error) throw new Error(gajiLedgerRes.error.message);
 
-  if (bukuKasBulanErr) throw new Error(bukuKasBulanErr.message);
-
-  // Upah bulan berjalan: baca dari gaji_ledger (earned, belum/sudah lunas)
-  const { data: gajiLedgerBulanIni, error: gajiLedgerBulanErr } = await supabase
-    .from('gaji_ledger')
-    .select('total, tipe')
-    .eq('tenant_id', TENANT_ID)
-    .in('status', ['belum_lunas', 'lunas'])
-    .gte('tanggal', `${currentTahun}-${mm}-01`)
-    .lte('tanggal', `${currentTahun}-${mm}-${String(lastDayCurrent).padStart(2, '0')}`);
-
-  if (gajiLedgerBulanErr) throw new Error(gajiLedgerBulanErr.message);
+  const jurnalBulanIni = jurnalRes.data;
+  const bukuKasBulanIni = bukuKasRes.data;
+  const gajiLedgerBulanIni = gajiLedgerRes.data;
 
   let total_pemasukan = 0;
   let direct_bahan = 0;
@@ -125,36 +114,28 @@ export async function getRingkasanKeuangan(
   const lastMonth = months[months.length - 1];
 
   const lastDayOfRange = new Date(Number(lastMonth.yyyy), Number(lastMonth.mm), 0).getDate();
-  const { data: jurnal6Bulan, error: tren6Err } = await supabase
-    .from('jurnal_entry')
-    .select('jenis, nominal, tanggal')
-    .eq('tenant_id', TENANT_ID)
-    .gte('tanggal', `${firstMonth.yyyy}-${firstMonth.mm}-01`)
-    .lte('tanggal', `${lastMonth.yyyy}-${lastMonth.mm}-${String(lastDayOfRange).padStart(2, '0')}`);
+  const rangeStart = `${firstMonth.yyyy}-${firstMonth.mm}-01`;
+  const rangeEnd = `${lastMonth.yyyy}-${lastMonth.mm}-${String(lastDayOfRange).padStart(2, '0')}`;
 
-  if (tren6Err) throw new Error(tren6Err.message);
+  // Run 6-month trend + upah outstanding queries in PARALLEL
+  const [tren6Res, bukuKas6Res, gajiLedger6Res, ledgerOutstandingRes] = await Promise.all([
+    supabase.from('jurnal_entry').select('jenis, nominal, tanggal')
+      .eq('tenant_id', TENANT_ID).gte('tanggal', rangeStart).lte('tanggal', rangeEnd),
+    supabase.from('buku_kas').select('nominal, tanggal')
+      .eq('tenant_id', TENANT_ID).eq('tipe', 'masuk').gte('tanggal', rangeStart).lte('tanggal', rangeEnd),
+    supabase.from('gaji_ledger').select('total, tipe, tanggal')
+      .eq('tenant_id', TENANT_ID).in('status', ['belum_lunas', 'lunas']).gte('tanggal', rangeStart).lte('tanggal', rangeEnd),
+    supabase.from('gaji_ledger').select('total, tipe')
+      .eq('tenant_id', TENANT_ID).eq('status', 'belum_lunas'),
+  ]);
 
-  // Buku kas tipe='masuk' untuk 6 bulan terakhir
-  const { data: bukuKas6Bulan, error: bukuKas6Err } = await supabase
-    .from('buku_kas')
-    .select('nominal, tanggal')
-    .eq('tenant_id', TENANT_ID)
-    .eq('tipe', 'masuk')
-    .gte('tanggal', `${firstMonth.yyyy}-${firstMonth.mm}-01`)
-    .lte('tanggal', `${lastMonth.yyyy}-${lastMonth.mm}-${String(lastDayOfRange).padStart(2, '0')}`);
+  if (tren6Res.error) throw new Error(tren6Res.error.message);
+  if (bukuKas6Res.error) throw new Error(bukuKas6Res.error.message);
+  if (gajiLedger6Res.error) throw new Error(gajiLedger6Res.error.message);
 
-  if (bukuKas6Err) throw new Error(bukuKas6Err.message);
-
-  // Gaji ledger 6 bulan terakhir (upah earned, belum/sudah lunas)
-  const { data: gajiLedger6Bulan, error: gajiLedger6Err } = await supabase
-    .from('gaji_ledger')
-    .select('total, tipe, tanggal')
-    .eq('tenant_id', TENANT_ID)
-    .in('status', ['belum_lunas', 'lunas'])
-    .gte('tanggal', `${firstMonth.yyyy}-${firstMonth.mm}-01`)
-    .lte('tanggal', `${lastMonth.yyyy}-${lastMonth.mm}-${String(lastDayOfRange).padStart(2, '0')}`);
-
-  if (gajiLedger6Err) throw new Error(gajiLedger6Err.message);
+  const jurnal6Bulan = tren6Res.data;
+  const bukuKas6Bulan = bukuKas6Res.data;
+  const gajiLedger6Bulan = gajiLedger6Res.data;
 
   const tren_6_bulan = months.map(month => {
     const monthJurnal = (jurnal6Bulan ?? []).filter((j: any) => {
@@ -205,16 +186,10 @@ export async function getRingkasanKeuangan(
     };
   });
 
-  // ─── 3. Upah outstanding ───
-  const { data: ledgerData, error: ledgerErr } = await supabase
-    .from('gaji_ledger')
-    .select('total, tipe')
-    .eq('tenant_id', TENANT_ID)
-    .eq('status', 'belum_lunas');
+  // ─── 3. Upah outstanding (already fetched in parallel above) ───
+  if (ledgerOutstandingRes.error) throw new Error(ledgerOutstandingRes.error.message);
 
-  if (ledgerErr) throw new Error(ledgerErr.message);
-
-  const upah_outstanding = (ledgerData ?? []).reduce(
+  const upah_outstanding = (ledgerOutstandingRes.data ?? []).reduce(
     (s: number, r: any) => {
       const t = Number(r.total);
       return r.tipe === 'reject_potong' ? s - t : s + t;

@@ -6,7 +6,11 @@
 
 import postgres from 'postgres';
 
-const sql = postgres(process.env.DATABASE_URL!, {
+// Singleton: reuse a single postgres pool across the entire server.
+// Prevents connection-pool exhaustion when both `src/db/index.ts` (Drizzle)
+// and this compatibility layer open separate pools.
+const globalForPg = globalThis as unknown as { __pgPool?: ReturnType<typeof postgres> };
+const sql = globalForPg.__pgPool ??= postgres(process.env.DATABASE_URL!, {
   max: 10,
   idle_timeout: 20,
 });

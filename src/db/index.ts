@@ -10,8 +10,10 @@ import * as schema from './schema';
 
 const connectionString = process.env.DATABASE_URL!;
 
-// Satu koneksi shared di server (singleton pattern untuk avoid connection pool exhaustion)
-const client = postgres(connectionString, {
+// Singleton: share ONE connection pool across Drizzle and the Supabase compat layer.
+// This prevents creating duplicate pools that exhaust DB connections.
+const globalForPg = globalThis as unknown as { __pgPool?: ReturnType<typeof postgres> };
+const client = globalForPg.__pgPool ??= postgres(connectionString, {
   max: 10,          // maksimal 10 koneksi di pool
   idle_timeout: 20, // tutup koneksi idle setelah 20 detik
 });
